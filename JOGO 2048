@@ -1,0 +1,722 @@
+# ==============================================================================
+#                              JOGO 2048 EM PYTHON
+# ------------------------------------------------------------------------------
+#  Trabalho final - Lógica de Programação e Estrutura de Dados (Unisa)
+#  IDE: PyCharm  |  Python 3.8 ou mais novo  |  Só usa bibliotecas nativas
+#
+#  COMO JOGAR
+#    W = cima   A = esquerda   S = baixo   D = direita   (digite e aperte ENTER)
+#    Q = desistir da partida (a pontuação é salva mesmo assim)
+#    Peças iguais que se encontram viram uma só, com o dobro do valor.
+#    Cada junção soma pontos. Chegue na peça 2048 para vencer!
+#
+#  O código está dividido em 5 PARTES, uma para cada integrante explicar:
+#    PARTE 1 - Configurações e funções de apoio ......... Integrante 1
+#    PARTE 2 - Tabuleiro e desenho na tela .............. Integrante 2
+#    PARTE 3 - Lógica dos movimentos .................... Integrante 3
+#    PARTE 4 - Placar, ranking e estatísticas ........... Integrante 4
+#    PARTE 5 - Partida, fim de jogo e menu .............. Integrante 5
+# ==============================================================================
+
+
+# ==============================================================================
+# PARTE 1 - CONFIGURAÇÕES E FUNÇÕES DE APOIO                     (Integrante 1)
+# ------------------------------------------------------------------------------
+# Bibliotecas importadas, constantes do jogo (valores que não mudam), cores de
+# cada peça e pequenas funções que as outras partes usam o tempo todo.
+# ==============================================================================
+
+
+import os                      # limpar a tela e montar o caminho do arquivo
+import random                  # sortear onde nasce cada peça nova
+import time                    # cronômetro da partida
+from datetime import datetime  # data e hora em que a partida foi jogada
+
+
+TAMANHO = 4         # o tabuleiro é 4 x 4
+META = 2048         # peça que dá a vitória
+CHANCE_DO_4 = 0.1   # 10% de chance de a peça nova ser 4 (senão é 2)
+TOP = 10            # quantas posições o ranking mostra
+MAX_APELIDO = 10    # tamanho máximo do apelido
+
+
+# O placar fica num arquivo de texto na MESMA pasta deste código
+PASTA_DO_JOGO = os.path.dirname(os.path.abspath(__file__))
+ARQUIVO_PLACAR = os.path.join(PASTA_DO_JOGO, "placar_2048.txt")
+
+
+# Cores no console (códigos ANSI). Se aparecerem símbolos estranhos, use False.
+USAR_CORES = True
+FIM_COR = "\033[0m"
+CORES = {
+    0: "\033[100m",           # casa vazia: fundo cinza
+    2: "\033[30;47m",         # preto no branco
+    4: "\033[30;46m",         # preto no ciano
+    8: "\033[30;42m",         # preto no verde
+    16: "\033[30;43m",        # preto no amarelo
+    32: "\033[97;41m",        # branco no vermelho
+    64: "\033[97;45m",        # branco no roxo
+    128: "\033[97;44m",       # branco no azul
+    256: "\033[30;103m",      # preto no amarelo claro
+    512: "\033[30;102m",      # preto no verde claro
+    1024: "\033[30;106m",     # preto no ciano claro
+    2048: "\033[1;97;101m",   # branco em negrito no vermelho claro
+}
+COR_GIGANTE = "\033[1;97;40m"  # peças acima de 2048
+
+
+os.system("")  # truque que liga as cores ANSI no terminal do Windows
+
+
+
+
+def limpar_tela():
+    """Limpa a tela. No console do PyCharm o 'cls' não funciona,
+    então empurramos o conteúdo antigo para cima com linhas em branco."""
+    if os.environ.get("PYCHARM_HOSTED"):
+        print("\n" * 40)
+    else:
+        os.system("cls" if os.name == "nt" else "clear")
+
+
+
+
+def formatar_tempo(segundos):
+    """Transforma segundos em texto MM:SS. Exemplo: 125 -> '02:05'."""
+    minutos = segundos // 60
+    resto = segundos % 60
+    return f"{minutos:02d}:{resto:02d}"
+
+
+
+
+def formatar_pontos(pontos):
+    """Pontos com 7 dígitos, igual fliperama antigo. Exemplo: 340 -> '0000340'."""
+    return f"{pontos:07d}"
+
+
+
+
+def pausar():
+    """Espera o jogador apertar ENTER."""
+    input("\n  Aperte ENTER para continuar...")
+
+
+
+
+def mostrar_titulo():
+    """Desenha o título do jogo com blocos."""
+    print()
+    print("   ██████   ██████  ██   ██  █████ ")
+    print("        ██ ██  ████ ██   ██ ██   ██")
+    print("    █████  ██ ██ ██ ███████  █████ ")
+    print("   ██      ████  ██      ██ ██   ██")
+    print("   ███████  ██████       ██  █████ ")
+    print("   ------- junte os números! -------")
+    print()
+
+
+
+
+def mostrar_como_jogar():
+    """Tela de instruções."""
+    limpar_tela()
+    print("  ======================= COMO JOGAR =======================")
+    print()
+    print("  1. Digite W, A, S ou D e aperte ENTER para mover as peças:")
+    print("         W = cima   A = esquerda   S = baixo   D = direita")
+    print("  2. Todas as peças deslizam até a parede naquela direção.")
+    print("  3. Duas peças IGUAIS que se encontram viram uma só:")
+    print("         2 + 2 = 4     4 + 4 = 8     ...     1024 + 1024 = 2048")
+    print("  4. Cada junção vale pontos (o valor da peça nova).")
+    print("  5. A cada jogada nasce uma peça nova (2 ou 4) numa casa vazia.")
+    print("  6. Chegou no 2048? Você venceu! Pode continuar para fazer mais.")
+    print("  7. Sem casas vazias e sem junções possíveis: GAME OVER.")
+    print()
+    print("  Dica: escolha um canto e mantenha a peça maior sempre nele!")
+    pausar()
+
+
+
+
+# ==============================================================================
+# PARTE 2 - TABULEIRO E DESENHO NA TELA                          (Integrante 2)
+# ------------------------------------------------------------------------------
+# O tabuleiro é uma MATRIZ: uma lista com 4 listas (linhas) de 4 números cada.
+# O número 0 representa uma casa vazia. Exemplo:
+#     [[2, 0, 0, 0],
+#      [0, 4, 0, 0],
+#      [0, 0, 0, 0],
+#      [0, 0, 0, 2]]
+# ==============================================================================
+
+
+def criar_tabuleiro():
+    """Cria a matriz 4x4 cheia de zeros e coloca as 2 primeiras peças."""
+    tabuleiro = []
+    for _ in range(TAMANHO):
+        tabuleiro.append([0] * TAMANHO)
+    adicionar_peca(tabuleiro)
+    adicionar_peca(tabuleiro)
+    return tabuleiro
+
+
+
+
+def casas_vazias(tabuleiro):
+    """Devolve uma lista com as posições (linha, coluna) que valem 0."""
+    vazias = []
+    for linha in range(TAMANHO):
+        for coluna in range(TAMANHO):
+            if tabuleiro[linha][coluna] == 0:
+                vazias.append((linha, coluna))
+    return vazias
+
+
+
+
+def adicionar_peca(tabuleiro):
+    """Sorteia uma casa vazia e coloca nela um 2 (90%) ou um 4 (10%)."""
+    vazias = casas_vazias(tabuleiro)
+    if len(vazias) == 0:
+        return
+    linha, coluna = random.choice(vazias)
+    if random.random() < CHANCE_DO_4:
+        tabuleiro[linha][coluna] = 4
+    else:
+        tabuleiro[linha][coluna] = 2
+
+
+
+
+def maior_peca(tabuleiro):
+    """Procura o maior número do tabuleiro."""
+    maior = 0
+    for linha in tabuleiro:
+        for valor in linha:
+            if valor > maior:
+                maior = valor
+    return maior
+
+
+
+
+def desenhar_peca(valor, com_numero):
+    """Devolve o texto de UMA casa (7 caracteres de largura), já colorido.
+    com_numero=False desenha só o fundo (parte de cima e de baixo da peça)."""
+    if com_numero and valor != 0:
+        texto = str(valor).center(7)
+    elif com_numero and not USAR_CORES:
+        texto = "   .   "
+    else:
+        texto = " " * 7
+    if USAR_CORES:
+        cor = CORES.get(valor, COR_GIGANTE)
+        return cor + texto + FIM_COR
+    return texto
+
+
+
+
+def mostrar_tabuleiro(tabuleiro, apelido, pontos, recorde, segundos, jogadas, mensagem):
+    """Desenha o placar (HUD), o tabuleiro e a mensagem da última jogada."""
+    limpar_tela()
+    print("  ================ 2 0 4 8 ================")
+    print(f"  JOGADOR: {apelido:<10}  HI-SCORE: {formatar_pontos(recorde)}")
+    print(f"  PONTOS:  {formatar_pontos(pontos)}     TEMPO: {formatar_tempo(segundos)}")
+    print(f"  JOGADAS: {jogadas:<10}  MAIOR PEÇA: {maior_peca(tabuleiro)}")
+    print()
+    for linha in tabuleiro:
+        # Cada linha do tabuleiro ocupa 3 linhas da tela para a peça ficar "quadrada":
+        # fundo em cima, número no meio, fundo embaixo.
+        for parte in ("cima", "meio", "baixo"):
+            texto = "  "
+            for valor in linha:
+                texto += desenhar_peca(valor, parte == "meio") + " "
+            print(texto)
+        print()
+    print(f"  >> {mensagem}")
+    print("  [W] cima  [A] esquerda  [S] baixo  [D] direita  [Q] desistir")
+
+
+
+
+# ==============================================================================
+# PARTE 3 - LÓGICA DOS MOVIMENTOS                                (Integrante 3)
+# ------------------------------------------------------------------------------
+# O coração do jogo. A ideia principal: só ensinamos o computador a mover UMA
+# linha para a ESQUERDA. Para as outras direções, giramos o tabuleiro, movemos
+# para a esquerda e desviramos.
+# ==============================================================================
+
+
+def deslizar_linha(linha):
+    """Empurra uma linha para a ESQUERDA juntando as peças iguais.
+    Exemplo: [2, 2, 4, 0] -> [4, 4, 0, 0] e ganha 4 pontos.
+    Cada peça só pode juntar UMA vez por jogada: [2, 2, 2, 2] -> [4, 4, 0, 0]."""
+    # 1) tira os zeros:  [2, 0, 2, 4] -> [2, 2, 4]
+    numeros = []
+    for valor in linha:
+        if valor != 0:
+            numeros.append(valor)
+
+
+    # 2) junta vizinhos iguais, da esquerda para a direita
+    nova_linha = []
+    pontos = 0
+    i = 0
+    while i < len(numeros):
+        if i + 1 < len(numeros) and numeros[i] == numeros[i + 1]:
+            soma = numeros[i] * 2
+            nova_linha.append(soma)
+            pontos += soma
+            i += 2            # pula as duas peças que viraram uma
+        else:
+            nova_linha.append(numeros[i])
+            i += 1
+
+
+    # 3) completa com zeros no final até a linha ter 4 casas de novo
+    while len(nova_linha) < TAMANHO:
+        nova_linha.append(0)
+
+
+    return nova_linha, pontos
+
+
+
+
+def inverter(tabuleiro):
+    """Espelha o tabuleiro: cada linha fica de trás para frente."""
+    novo = []
+    for linha in tabuleiro:
+        novo.append(linha[::-1])   # [::-1] = lista ao contrário
+    return novo
+
+
+
+
+def transpor(tabuleiro):
+    """Troca linhas por colunas: a coluna 0 vira a linha 0, e assim por diante."""
+    novo = []
+    for coluna in range(TAMANHO):
+        nova_linha = []
+        for linha in range(TAMANHO):
+            nova_linha.append(tabuleiro[linha][coluna])
+        novo.append(nova_linha)
+    return novo
+
+
+
+
+def mover(tabuleiro, direcao):
+    """Faz a jogada na direção pedida (W, A, S ou D).
+       A (esquerda): desliza direto
+       D (direita):  inverte  -> desliza -> inverte de volta
+       W (cima):     transpõe -> desliza -> transpõe de volta
+       S (baixo):    transpõe e inverte -> desliza -> desfaz as duas coisas
+    Devolve: (tabuleiro_novo, pontos_ganhos, se_algo_mudou)."""
+    # 1) vira o tabuleiro para que a direção pedida vire "esquerda"
+    if direcao == "D":
+        virado = inverter(tabuleiro)
+    elif direcao == "W":
+        virado = transpor(tabuleiro)
+    elif direcao == "S":
+        virado = inverter(transpor(tabuleiro))
+    else:
+        virado = tabuleiro
+
+
+    # 2) desliza cada linha para a esquerda e soma os pontos
+    deslizado = []
+    pontos = 0
+    for linha in virado:
+        nova_linha, ganho = deslizar_linha(linha)
+        deslizado.append(nova_linha)
+        pontos += ganho
+
+
+    # 3) desvira, fazendo as operações na ordem contrária
+    if direcao == "D":
+        novo = inverter(deslizado)
+    elif direcao == "W":
+        novo = transpor(deslizado)
+    elif direcao == "S":
+        novo = transpor(inverter(deslizado))
+    else:
+        novo = deslizado
+
+
+    mudou = novo != tabuleiro
+    return novo, pontos, mudou
+
+
+
+
+def pode_mover(tabuleiro):
+    """Diz se ainda existe jogada: tem casa vazia OU duas peças iguais
+    vizinhas (lado a lado ou uma em cima da outra)."""
+    for linha in range(TAMANHO):
+        for coluna in range(TAMANHO):
+            valor = tabuleiro[linha][coluna]
+            if valor == 0:
+                return True
+            if coluna + 1 < TAMANHO and valor == tabuleiro[linha][coluna + 1]:
+                return True
+            if linha + 1 < TAMANHO and valor == tabuleiro[linha + 1][coluna]:
+                return True
+    return False
+
+
+
+
+# ==============================================================================
+# PARTE 4 - PLACAR, RANKING E ESTATÍSTICAS                       (Integrante 4)
+# ------------------------------------------------------------------------------
+# Cada partida vira UMA LINHA no arquivo placar_2048.txt, separada por ";":
+#     APELIDO;PONTOS;TEMPO_EM_SEGUNDOS;MAIOR_PECA;JOGADAS;DATA
+#     CARLOS;2340;252;256;213;08/11/2026 22:40
+# Ao ler o arquivo, cada linha vira um DICIONÁRIO com esses campos.
+# ==============================================================================
+
+
+def carregar_partidas():
+    """Lê o arquivo do placar e devolve uma lista de dicionários (um por partida)."""
+    partidas = []
+    if not os.path.exists(ARQUIVO_PLACAR):
+        return partidas      # ninguém jogou ainda
+    with open(ARQUIVO_PLACAR, "r", encoding="utf-8") as arquivo:
+        for linha in arquivo:
+            campos = linha.strip().split(";")
+            if len(campos) != 6:
+                continue     # linha vazia ou estragada: ignora
+            try:
+                partida = {
+                    "apelido": campos[0],
+                    "pontos": int(campos[1]),
+                    "tempo": int(campos[2]),
+                    "maior_peca": int(campos[3]),
+                    "jogadas": int(campos[4]),
+                    "data": campos[5],
+                }
+            except ValueError:
+                continue     # tinha texto onde devia ter número: ignora
+            partidas.append(partida)
+    return partidas
+
+
+
+
+def salvar_partida(apelido, pontos, segundos, maior, jogadas):
+    """Acrescenta a partida no final do arquivo (modo "a" = append)."""
+    data = datetime.now().strftime("%d/%m/%Y %H:%M")
+    with open(ARQUIVO_PLACAR, "a", encoding="utf-8") as arquivo:
+        arquivo.write(f"{apelido};{pontos};{segundos};{maior};{jogadas};{data}\n")
+
+
+
+
+def e_melhor(a, b):
+    """True se a partida 'a' é melhor que a 'b'.
+    Mais pontos ganha. Se empatar nos pontos, ganha quem fez em MENOS tempo."""
+    if a["pontos"] != b["pontos"]:
+        return a["pontos"] > b["pontos"]
+    return a["tempo"] < b["tempo"]
+
+
+
+
+def ordenar_ranking(partidas):
+    """Ordena com o algoritmo BUBBLE SORT: compara vizinhos e troca de lugar
+    quando o de trás é melhor. Repetindo, os melhores "sobem" para o topo."""
+    lista = partidas[:]      # cópia, para não mexer na lista original
+    n = len(lista)
+    for i in range(n - 1):
+        for j in range(n - 1 - i):
+            if e_melhor(lista[j + 1], lista[j]):
+                lista[j], lista[j + 1] = lista[j + 1], lista[j]
+    return lista
+
+
+
+
+def obter_recorde():
+    """Maior pontuação já salva (o HI-SCORE). Se não tiver nenhuma, é 0."""
+    recorde = 0
+    for partida in carregar_partidas():
+        if partida["pontos"] > recorde:
+            recorde = partida["pontos"]
+    return recorde
+
+
+
+
+def calcular_posicao(pontos, segundos):
+    """Em que lugar do ranking essa pontuação fica? 1 + quantas são melhores."""
+    nova = {"pontos": pontos, "tempo": segundos}
+    posicao = 1
+    for partida in carregar_partidas():
+        if e_melhor(partida, nova):
+            posicao += 1
+    return posicao
+
+
+
+
+def mostrar_ranking():
+    """Mostra o TOP 10 no estilo fliperama."""
+    limpar_tela()
+    ranking = ordenar_ranking(carregar_partidas())
+    print("  ======================= HIGH SCORES =======================")
+    print()
+    if len(ranking) == 0:
+        print("  Nenhuma partida salva ainda. Seja o primeiro!")
+    else:
+        print("  POS  JOGADOR        PONTOS   TEMPO   PEÇA   DATA")
+        posicao = 1
+        for p in ranking[:TOP]:
+            print(f"  {posicao:>2}º  {p['apelido']:.<12}  {formatar_pontos(p['pontos'])}"
+                  f"   {formatar_tempo(p['tempo'])}  {p['maior_peca']:>5}   {p['data'][:10]}")
+            posicao += 1
+    pausar()
+
+
+
+
+def mostrar_estatisticas():
+    """Indicadores gerais do jogo + gráfico de barras feito com caracteres."""
+    limpar_tela()
+    partidas = carregar_partidas()
+    print("  ====================== ESTATÍSTICAS ======================")
+    print()
+    if len(partidas) == 0:
+        print("  Ainda não há partidas salvas.")
+        pausar()
+        return
+
+
+    soma_pontos = 0
+    soma_tempo = 0
+    maior = 0
+    vitorias = 0
+    acumulado = {}   # dicionário: apelido -> soma dos pontos de todas as partidas
+    for p in partidas:
+        soma_pontos += p["pontos"]
+        soma_tempo += p["tempo"]
+        if p["maior_peca"] > maior:
+            maior = p["maior_peca"]
+        if p["maior_peca"] >= META:
+            vitorias += 1
+        if p["apelido"] in acumulado:
+            acumulado[p["apelido"]] += p["pontos"]
+        else:
+            acumulado[p["apelido"]] = p["pontos"]
+
+
+    total = len(partidas)
+    print(f"  Partidas jogadas ............ {total}")
+    print(f"  Jogadores diferentes ........ {len(acumulado)}")
+    print(f"  Média de pontos ............. {soma_pontos // total}")
+    print(f"  Tempo médio por partida ..... {formatar_tempo(soma_tempo // total)}")
+    print(f"  Maior peça já alcançada ..... {maior}")
+    print(f"  Vitórias (chegou ao 2048) ... {vitorias}")
+
+
+    # Gráfico de barras: pontuação acumulada de cada jogador (do maior pro menor)
+    print()
+    print("  PONTUAÇÃO ACUMULADA POR JOGADOR")
+    jogadores = []
+    for apelido in acumulado:
+        jogadores.append({"apelido": apelido, "pontos": acumulado[apelido], "tempo": 0})
+    jogadores = ordenar_ranking(jogadores)      # reaproveita o bubble sort
+    maior_total = jogadores[0]["pontos"]
+    for j in jogadores[:TOP]:
+        if maior_total > 0:
+            tamanho = j["pontos"] * 30 // maior_total   # a maior barra tem 30 blocos
+        else:
+            tamanho = 0
+        print(f"  {j['apelido']:<10} {'█' * tamanho} {j['pontos']}")
+    pausar()
+
+
+
+
+# ==============================================================================
+# PARTE 5 - PARTIDA, FIM DE JOGO E MENU                          (Integrante 5)
+# ------------------------------------------------------------------------------
+# Junta tudo: pede o apelido, liga o cronômetro, repete o ciclo
+# "mostrar -> ler jogada -> mover -> nascer peça" até o jogo acabar,
+# salva a partida e mostra a tela final. O menu é o ponto de partida.
+# ==============================================================================
+
+
+def pedir_apelido():
+    """Pede o apelido até ele ser válido: 1 a 10 caracteres e sem ';'."""
+    while True:
+        apelido = input(f"  Digite seu apelido (até {MAX_APELIDO} letras): ").strip().upper()
+        if len(apelido) == 0:
+            print("  O apelido não pode ficar vazio.")
+        elif len(apelido) > MAX_APELIDO:
+            print(f"  Use no máximo {MAX_APELIDO} caracteres.")
+        elif ";" in apelido:
+            print("  Não use ponto e vírgula (;) no apelido.")
+        else:
+            return apelido
+
+
+
+
+def tela_fim_de_jogo(apelido, pontos, segundos, maior, jogadas, posicao, novo_recorde, venceu):
+    """Mostra o resultado final: pontuação, tempo e posição no ranking."""
+    limpar_tela()
+    print("  ##########################################")
+    print("  #                                        #")
+    if venceu:
+        print("  #        V O C Ê   V E N C E U !         #")
+    else:
+        print("  #           G A M E   O V E R            #")
+    print("  #                                        #")
+    print("  ##########################################")
+    print()
+    print(f"  Jogador ............ {apelido}")
+    print(f"  Pontuação .......... {formatar_pontos(pontos)}")
+    print(f"  Tempo de jogo ...... {formatar_tempo(segundos)}")
+    print(f"  Maior peça ......... {maior}")
+    print(f"  Jogadas ............ {jogadas}")
+    print(f"  Posição no ranking . {posicao}º lugar")
+    if novo_recorde:
+        print()
+        print("  ****************************************")
+        print("  *   NOVO RECORDE! VOCÊ É O NÚMERO 1    *")
+        print("  ****************************************")
+    pausar()
+
+
+
+
+def jogar():
+    """Uma partida completa, do apelido até a tela de fim de jogo."""
+    limpar_tela()
+    mostrar_titulo()
+    apelido = pedir_apelido()
+
+
+    tabuleiro = criar_tabuleiro()
+    pontos = 0
+    jogadas = 0
+    recorde = obter_recorde()
+    venceu = False
+    mensagem = f"Boa sorte, {apelido}! Chegue ao 2048."
+    inicio = time.time()               # liga o cronômetro
+
+
+    while True:
+        segundos = int(time.time() - inicio)
+        mostrar_tabuleiro(tabuleiro, apelido, pontos, max(recorde, pontos),
+                          segundos, jogadas, mensagem)
+
+
+        if not pode_mover(tabuleiro):
+            print("\n  Não há mais movimentos possíveis!")
+            break
+
+
+        jogada = input("  Sua jogada: ").strip().upper()
+        if jogada == "Q":
+            segundos = int(time.time() - inicio)
+            print("\n  Você desistiu da partida.")
+            break
+        if jogada not in ("W", "A", "S", "D"):
+            mensagem = "Tecla inválida! Use W, A, S ou D."
+            continue
+
+
+        tabuleiro_novo, ganho, mudou = mover(tabuleiro, jogada)
+        if not mudou:
+            mensagem = "Nada se mexeu. Tente outra direção."
+            continue
+
+
+        maior_antes = maior_peca(tabuleiro)
+        tabuleiro = tabuleiro_novo
+        pontos += ganho
+        jogadas += 1
+        adicionar_peca(tabuleiro)
+
+
+        if ganho > 0:
+            mensagem = f"+{ganho} pontos!"
+        else:
+            mensagem = "..."
+        if maior_peca(tabuleiro) > maior_antes and maior_peca(tabuleiro) >= 128:
+            mensagem += f"  Nova maior peça: {maior_peca(tabuleiro)}!"
+
+
+        # Chegou ao 2048 pela primeira vez nesta partida?
+        if maior_peca(tabuleiro) >= META and not venceu:
+            venceu = True
+            segundos = int(time.time() - inicio)
+            mostrar_tabuleiro(tabuleiro, apelido, pontos, max(recorde, pontos),
+                              segundos, jogadas, "*** PARABÉNS! VOCÊ FEZ 2048! ***")
+            resposta = input("  Continuar jogando para fazer mais pontos? (S/N): ").strip().upper()
+            if resposta != "S":
+                break
+            mensagem = "Modo infinito! Até onde você chega?"
+
+
+    pausar()
+    maior = maior_peca(tabuleiro)
+    if jogadas == 0:
+        print("  Partida sem nenhuma jogada não entra no placar.")
+        pausar()
+        return
+
+
+    posicao = calcular_posicao(pontos, segundos)   # calcula ANTES de salvar
+    novo_recorde = pontos > recorde
+    salvar_partida(apelido, pontos, segundos, maior, jogadas)
+    tela_fim_de_jogo(apelido, pontos, segundos, maior, jogadas, posicao, novo_recorde, venceu)
+
+
+
+
+def menu():
+    """Menu principal: fica repetindo até o jogador escolher sair."""
+    while True:
+        limpar_tela()
+        mostrar_titulo()
+        print(f"  HI-SCORE: {formatar_pontos(obter_recorde())}")
+        print()
+        print("  [1] Jogar")
+        print("  [2] Ranking (High Scores)")
+        print("  [3] Estatísticas")
+        print("  [4] Como jogar")
+        print("  [0] Sair")
+        opcao = input("\n  Escolha uma opção: ").strip()
+
+
+        if opcao == "1":
+            jogar()
+        elif opcao == "2":
+            mostrar_ranking()
+        elif opcao == "3":
+            mostrar_estatisticas()
+        elif opcao == "4":
+            mostrar_como_jogar()
+        elif opcao == "0":
+            print("\n  Valeu por jogar! GAME OVER... até a próxima ficha.")
+            break
+        else:
+            print("  Opção inválida.")
+            time.sleep(1)
+
+
+
+
+# Ponto de partida: só roda o menu quando este arquivo é executado diretamente
+if __name__ == "__main__":
+    menu()
+
+
+
+
